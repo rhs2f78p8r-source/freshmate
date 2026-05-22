@@ -212,7 +212,7 @@
         const searchQuery = ref('');
         const filterLocation = ref('all');
         const isOcrLoading = ref(false);
-        const ocrProgressText = ref('사진을 분석 중입니다...'); // 진행 상태 텍스트
+        const ocrProgressText = ref('사진을 분석 중입니다...');
         const settings = ref({ lastBackup: '' });
         
         const recognizedNames = ref([]);
@@ -330,7 +330,6 @@
           recognizedNames.value = []; 
 
           try {
-            // 이미지 리사이징 
             const img = new Image();
             img.src = URL.createObjectURL(file);
             await new Promise((resolve, reject) => {
@@ -356,7 +355,6 @@
             const base64Image = canvas.toDataURL('image/jpeg', 0.8);
             URL.revokeObjectURL(img.src);
 
-            // OCR 엔진 실행 (진행률 표시)
             const result = await Tesseract.recognize(
               base64Image,
               'kor',
@@ -373,7 +371,6 @@
             
             const text = result.data.text;
 
-            // 텍스트 필터링
             const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
             let extracted = [];
             
@@ -383,8 +380,16 @@
 
               let cleanName = line.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
               
+              cleanName = cleanName.replace(/[^가-힣a-zA-Z0-9\s]/g, ' ');
+              cleanName = cleanName.replace(/\s+/g, ' ').trim();
+              
+              cleanName = cleanName.replace(/^(아마|을|세|호|개|의)\s+/g, '');
+              cleanName = cleanName.replace(/^[가-힣a-zA-Z0-9]\s+/g, '');
+              cleanName = cleanName.replace(/\s+[가-힣a-zA-Z0-9]$/g, '');
+              cleanName = cleanName.replace(/\b\d+\b/g, '').replace(/\s+/g, ' ').trim();
+
               if (/[가-힣]{2,}/.test(cleanName)) { 
-                if (!extracted.includes(cleanName)) {
+                if (cleanName.length > 1 && !extracted.includes(cleanName)) {
                   extracted.push(cleanName);
                 }
               }
@@ -397,7 +402,6 @@
             }
           } catch (e) {
             console.error('OCR Error:', e);
-            // 에러 메시지를 명확하게 표시
             alert(`사진 판독 중 일시적인 오류가 발생했습니다.\n에러 내용: ${e.message}`);
           } finally {
             isOcrLoading.value = false;
