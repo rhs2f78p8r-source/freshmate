@@ -1,4 +1,4 @@
-const CACHE_NAME = 'freshmate-cache-v2';
+const CACHE_NAME = 'freshmate-cache-v3';
 const urlsToCache = [
   './',
   './index.html',
