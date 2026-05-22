@@ -15,7 +15,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-  <script src="https://unpkg.com/tesseract.js@v4.1.4/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <script>
@@ -33,7 +33,7 @@
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
   <div id="app" class="max-w-md mx-auto h-screen flex flex-col bg-white dark:bg-gray-800 shadow-xl overflow-hidden relative">
     
-    <header class="flex justify-between items-center p-4 bg-primary text-white shrink-0">
+    <header class="flex justify-between items-center p-4 bg-primary text-white shrink-0 shadow-md z-10">
       <h1 class="text-xl font-bold tracking-wide"><i class="ph-fill ph-leaf"></i> FreshMate</h1>
       <div class="flex gap-4">
         <button @click="toggleTheme"><i class="ph" :class="isDark ? 'ph-sun' : 'ph-moon'" style="font-size: 1.5rem;"></i></button>
@@ -60,58 +60,79 @@
           </select>
         </div>
 
-        <div v-if="filteredItems.length === 0" class="text-center text-gray-500 py-10">
-          <i class="ph ph-empty text-4xl mb-2"></i><p>등록된 식재료가 없습니다.</p>
+        <div v-if="filteredItems.length === 0" class="text-center text-gray-500 py-10 flex flex-col items-center">
+          <i class="ph ph-empty text-5xl mb-3 text-gray-300 dark:text-gray-600"></i>
+          <p>등록된 식재료가 없습니다.</p>
         </div>
         <div v-else class="space-y-3">
-          <div v-for="item in filteredItems" :key="item.id" class="p-3 rounded-xl border dark:border-gray-700 flex justify-between items-center shadow-sm" :class="getStatusColor(item.expiryDate)">
+          <div v-for="item in filteredItems" :key="item.id" class="p-4 rounded-xl border dark:border-gray-700 flex justify-between items-center shadow-sm" :class="getStatusColor(item.expiryDate)">
             <div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 mb-1">
                 <span class="font-bold text-lg">{{ item.name }}</span>
-                <span class="text-xs px-2 py-0.5 rounded-full bg-white/50 dark:bg-black/20">{{ item.location }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10">{{ item.location }}</span>
               </div>
-              <div class="text-sm opacity-80 mt-1">소비기한: {{ item.expiryDate }} ({{ getDday(item.expiryDate) }})</div>
+              <div class="text-sm opacity-90 flex items-center gap-1">
+                <i class="ph ph-calendar-blank"></i> {{ item.expiryDate }} 
+                <span class="font-bold ml-1">({{ getDday(item.expiryDate) }})</span>
+              </div>
             </div>
-            <button @click="deleteItem(item.id)" class="text-red-500 hover:text-red-700 p-2"><i class="ph ph-trash text-xl"></i></button>
+            <button @click="deleteItem(item.id)" class="text-red-500 hover:text-red-700 bg-white/50 dark:bg-black/20 p-2 rounded-lg active:scale-95 transition-transform"><i class="ph ph-trash text-xl"></i></button>
           </div>
         </div>
       </div>
 
       <div v-if="currentTab === 'add'" class="space-y-6">
-        <div class="bg-gray-100 dark:bg-gray-900 p-6 rounded-xl text-center border-2 border-dashed border-gray-300 dark:border-gray-700 relative">
-          <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-          <div v-if="isOcrLoading" class="flex flex-col items-center">
-            <i class="ph ph-spinner-gap animate-spin text-4xl text-primary mb-2"></i>
-            <p class="text-sm font-bold text-primary">영수증/라벨 분석 중... (최대 10초)</p>
+        
+        <div class="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-xl text-center border-2 border-dashed border-primary/50 relative overflow-hidden transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
+          <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+          <div v-if="isOcrLoading" class="flex flex-col items-center py-4">
+            <i class="ph ph-scan animate-pulse text-5xl text-primary mb-3"></i>
+            <p class="font-bold text-primary">이미지 판독 중...</p>
+            <p class="text-xs text-gray-500 mt-1">인터넷 환경에 따라 5~15초 소요됩니다</p>
           </div>
-          <div v-else>
-            <i class="ph ph-camera text-4xl text-gray-400 mb-2"></i>
-            <p class="font-bold text-gray-600 dark:text-gray-300">사진 찍기 또는 업로드</p>
-            <p class="text-xs text-gray-500 mt-1">영수증을 올리면 식재료를 자동 분류합니다.<br/>(원본 사진은 저장되지 않습니다)</p>
+          <div v-else class="py-2">
+            <i class="ph ph-camera-plus text-5xl text-primary mb-2"></i>
+            <p class="font-bold text-gray-700 dark:text-gray-200">영수증 / 구매내역 사진 선택</p>
+            <p class="text-xs text-gray-500 mt-2 break-keep">이미지를 올리면 AI가 가격이나 옵션을 걸러내고<br/>식재료 이름만 자동으로 추출합니다.</p>
           </div>
         </div>
 
-        <form @submit.prevent="addItem" class="space-y-4">
+        <div v-if="recognizedNames.length > 0" class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4 animate-fade-in">
+          <p class="text-sm font-bold text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-1">
+            <i class="ph-fill ph-magic-wand"></i> 사진에서 찾은 항목 (클릭하여 입력)
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="name in recognizedNames" :key="name" @click="selectRecognizedName(name)" 
+              class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-sm rounded-full shadow-sm hover:border-primary text-gray-800 dark:text-gray-200 active:scale-95 transition-all">
+              {{ name }}
+            </button>
+          </div>
+        </div>
+
+        <form @submit.prevent="addItem" class="bg-white dark:bg-gray-800 p-5 rounded-xl border dark:border-gray-700 shadow-sm space-y-4">
           <div>
-            <label class="block text-sm font-bold mb-1">식재료 이름</label>
-            <input v-model="newItem.name" required type="text" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+            <label class="block text-sm font-bold mb-1 text-gray-700 dark:text-gray-300">식재료 이름</label>
+            <div class="relative">
+              <input v-model="newItem.name" required type="text" placeholder="예: 땡초 근위 볶음" class="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all">
+              <button type="button" @click="newItem.name = ''" v-if="newItem.name" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"><i class="ph-fill ph-x-circle text-lg"></i></button>
+            </div>
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-bold mb-1">보관 위치</label>
-              <select v-model="newItem.location" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+              <label class="block text-sm font-bold mb-1 text-gray-700 dark:text-gray-300">보관 위치</label>
+              <select v-model="newItem.location" class="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:border-primary">
                 <option value="냉장">냉장</option>
                 <option value="냉동">냉동</option>
                 <option value="실온">실온</option>
               </select>
             </div>
             <div>
-              <label class="block text-sm font-bold mb-1">소비기한</label>
-              <input v-model="newItem.expiryDate" required type="date" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+              <label class="block text-sm font-bold mb-1 text-gray-700 dark:text-gray-300">소비기한</label>
+              <input v-model="newItem.expiryDate" required type="date" class="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:border-primary">
             </div>
           </div>
-          <button type="submit" class="w-full bg-primary text-white font-bold py-3 rounded-xl shadow-lg hover:bg-emerald-600 active:scale-95 transition-transform">
-            직접 추가하기
+          <button type="submit" class="w-full mt-2 bg-primary text-white font-bold py-3.5 rounded-xl shadow-md hover:bg-emerald-600 active:scale-95 transition-all flex justify-center items-center gap-2">
+            <i class="ph-bold ph-plus"></i> 목록에 추가하기
           </button>
         </form>
       </div>
@@ -119,13 +140,13 @@
       <div v-if="currentTab === 'notifications'" class="space-y-4">
         <h2 class="text-xl font-bold border-b pb-2 dark:border-gray-700">임박 식재료 알림</h2>
         <div v-if="imminentItems.length === 0" class="text-center text-gray-500 py-10">
-          <i class="ph ph-check-circle text-4xl mb-2 text-primary"></i><p>소비기한이 임박한 식재료가 없습니다.</p>
+          <i class="ph ph-check-circle text-5xl mb-2 text-primary"></i><p>소비기한이 임박한 식재료가 없습니다.</p>
         </div>
-        <div v-else v-for="item in imminentItems" :key="'noti-'+item.id" class="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-xl border border-red-200 dark:border-red-800 flex gap-3 items-start">
-          <i class="ph-fill ph-warning-circle text-2xl shrink-0 mt-0.5"></i>
+        <div v-else v-for="item in imminentItems" :key="'noti-'+item.id" class="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-xl border border-red-200 dark:border-red-800 flex gap-3 items-start shadow-sm">
+          <i class="ph-fill ph-warning-circle text-2xl shrink-0 mt-0.5 animate-pulse"></i>
           <div>
-            <p class="font-bold">{{ item.name }} ({{ item.location }})</p>
-            <p class="text-sm">소비기한이 {{ getDday(item.expiryDate) }} 남았습니다! 빨리 소비해주세요.</p>
+            <p class="font-bold">{{ item.name }} <span class="font-normal text-sm opacity-80">({{ item.location }})</span></p>
+            <p class="text-sm mt-1">소비기한이 <strong>{{ getDday(item.expiryDate) }}</strong> 남았습니다! 빨리 소비해주세요.</p>
           </div>
         </div>
       </div>
@@ -134,78 +155,51 @@
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
           <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 백업/복원 (iCloud)</div>
           <div class="p-4 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-            <p class="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 p-2 rounded">
-              <i class="ph ph-info"></i> 내보내기를 누르면 파일 앱(iCloud Drive)에 저장됩니다. 기기 변경 시 백업 파일을 불러오세요.
+            <p class="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 p-3 rounded-lg leading-relaxed">
+              <i class="ph-fill ph-info"></i> 내보내기를 누르면 파일 앱(iCloud Drive)에 저장됩니다. 기기 변경 시 백업 파일을 불러오세요.
             </p>
             <div class="flex gap-2">
-              <button @click="exportData" class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2 rounded-lg text-gray-800 dark:text-gray-200 font-bold">백업 내보내기 (.json)</button>
-              <label class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2 rounded-lg text-center cursor-pointer text-gray-800 dark:text-gray-200 font-bold">
-                백업 가져오기
+              <button @click="exportData" class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2.5 rounded-lg text-gray-800 dark:text-gray-200 font-bold active:scale-95 transition-transform">내보내기 (.json)</button>
+              <label class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2.5 rounded-lg text-center cursor-pointer text-gray-800 dark:text-gray-200 font-bold active:scale-95 transition-transform">
+                가져오기
                 <input type="file" accept=".json" @change="importData" class="hidden">
               </label>
             </div>
-            <p class="text-xs text-center">마지막 백업: {{ settings.lastBackup || '없음' }}</p>
+            <p class="text-xs text-center opacity-70">마지막 백업: {{ settings.lastBackup || '없음' }}</p>
           </div>
         </section>
 
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
           <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 관리</div>
-          <div class="p-4 flex flex-col gap-3">
-            <button @click="exportCSV" class="w-full flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-              <span>엑셀(CSV) 내보내기</span><i class="ph ph-file-csv text-lg"></i>
+          <div class="p-2 flex flex-col">
+            <button @click="exportCSV" class="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium">
+              <span>엑셀(CSV) 다운로드</span><i class="ph ph-file-csv text-xl text-green-600"></i>
             </button>
-            <button @click="addSampleData" class="w-full flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-              <span>샘플 데이터 추가</span><i class="ph ph-database text-lg"></i>
-            </button>
-            <button @click="clearAllData" class="w-full flex items-center justify-between p-2 rounded text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
-              <span>전체 데이터 삭제</span><i class="ph ph-trash text-lg"></i>
+            <button @click="clearAllData" class="w-full flex items-center justify-between p-3 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium mt-1">
+              <span>전체 데이터 초기화</span><i class="ph ph-trash text-xl"></i>
             </button>
           </div>
         </section>
       </div>
     </main>
 
-    <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe">
-      <button @click="currentTab = 'list'" :class="currentTab === 'list' ? 'text-primary' : 'text-gray-400'" class="flex flex-col items-center p-3 flex-1">
-        <i class="ph-fill ph-list-bullets text-2xl"></i><span class="text-[10px] mt-1">목록</span>
+    <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]">
+      <button @click="currentTab = 'list'" :class="currentTab === 'list' ? 'text-primary' : 'text-gray-400 hover:text-gray-600'" class="flex flex-col items-center p-3 flex-1 transition-colors">
+        <i class="ph-fill ph-list-bullets text-2xl"></i><span class="text-[10px] mt-1 font-medium">목록</span>
       </button>
       <button @click="currentTab = 'add'" class="relative flex-1">
-        <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg border-4 border-white dark:border-gray-800" :class="currentTab === 'add' ? 'scale-110' : ''">
-          <i class="ph ph-plus text-2xl"></i>
+        <div class="absolute -top-5 left-1/2 -translate-x-1/2 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-[0_5px_15px_rgba(16,185,129,0.4)] border-4 border-white dark:border-gray-800 transition-transform duration-300" :class="currentTab === 'add' ? 'scale-110' : 'hover:scale-105'">
+          <i class="ph-bold ph-plus text-2xl"></i>
         </div>
       </button>
-      <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'text-primary' : 'text-gray-400'" class="flex flex-col items-center p-3 flex-1">
-        <i class="ph-fill ph-gear text-2xl"></i><span class="text-[10px] mt-1">설정</span>
+      <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'text-primary' : 'text-gray-400 hover:text-gray-600'" class="flex flex-col items-center p-3 flex-1 transition-colors">
+        <i class="ph-fill ph-gear text-2xl"></i><span class="text-[10px] mt-1 font-medium">설정</span>
       </button>
     </nav>
-
   </div>
 
   <script>
     const { createApp, ref, computed, onMounted, watch } = Vue;
-
-    // 업데이트된 식재료 자동 분류 사전
-    const ingredientDict = {
-      '우유': { loc: '냉장', days: 10 },
-      '계란': { loc: '냉장', days: 20 },
-      '돼지고기': { loc: '냉장', days: 3 },
-      '소고기': { loc: '냉장', days: 4 },
-      '닭고기': { loc: '냉동', days: 180 },
-      '두부': { loc: '냉장', days: 7 },
-      '양파': { loc: '실온', days: 14 },
-      '마늘': { loc: '냉장', days: 30 },
-      '햇반': { loc: '실온', days: 180 },
-      '라면': { loc: '실온', days: 150 },
-      '땡초 근위 볶음': { loc: '냉동', days: 90 }, //
-      '고래사 어묵가득 한입 떡볶이': { loc: '냉장', days: 7 }, //
-      '치킨데리야끼 볶음밥': { loc: '냉동', days: 90 }, //
-      '강릉 초당 순두부': { loc: '냉장', days: 7 }, //
-      '미니 후레쉬 생모짜렐라 치즈': { loc: '냉장', days: 14 }, //
-      '무항한돈 콰트로치즈 비엔나': { loc: '냉장', days: 20 }, //
-      '통영 깐멍게': { loc: '냉장', days: 3 }, //
-      '숄더슬햄': { loc: '냉장', days: 30 }, //
-      '영천 깐마늘': { loc: '냉장', days: 30 }, //
-    };
 
     createApp({
       setup() {
@@ -217,8 +211,15 @@
         const isOcrLoading = ref(false);
         const settings = ref({ lastBackup: '' });
         
+        // 텍스트 추출로 찾은 식재료 이름 배열
+        const recognizedNames = ref([]);
+        
+        // 앱이 스스로 학습하는 나만의 식재료 사전 (localforage에 저장됨)
+        const customDict = ref({});
+        
         const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
 
+        // 초기 데이터 로드
         onMounted(async () => {
           const storedItems = await localforage.getItem('freshmate_items');
           if (storedItems) items.value = storedItems;
@@ -226,24 +227,28 @@
           const storedSettings = await localforage.getItem('freshmate_settings');
           if (storedSettings) settings.value = storedSettings;
 
+          const storedDict = await localforage.getItem('freshmate_dict');
+          if (storedDict) customDict.value = storedDict;
+
           const savedTheme = localStorage.getItem('theme');
           if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             isDark.value = true;
             document.documentElement.classList.add('dark');
           }
 
-          const d = new Date();
-          d.setDate(d.getDate() + 7);
-          newItem.value.expiryDate = d.toISOString().split('T')[0];
+          resetNewItemDate();
         });
 
-        watch(items, (newVal) => {
-          localforage.setItem('freshmate_items', newVal);
-        }, { deep: true });
-        
-        watch(settings, (newVal) => {
-          localforage.setItem('freshmate_settings', newVal);
-        }, { deep: true });
+        // 상태 자동 저장
+        watch(items, (newVal) => localforage.setItem('freshmate_items', newVal), { deep: true });
+        watch(settings, (newVal) => localforage.setItem('freshmate_settings', newVal), { deep: true });
+        watch(customDict, (newVal) => localforage.setItem('freshmate_dict', newVal), { deep: true });
+
+        const resetNewItemDate = () => {
+          const d = new Date();
+          d.setDate(d.getDate() + 7); // 기본 7일
+          newItem.value.expiryDate = d.toISOString().split('T')[0];
+        }
 
         const toggleTheme = () => {
           isDark.value = !isDark.value;
@@ -258,27 +263,20 @@
 
         const filteredItems = computed(() => {
           let res = items.value;
-          if (filterLocation.value !== 'all') {
-            res = res.filter(i => i.location === filterLocation.value);
-          }
-          if (searchQuery.value) {
-            res = res.filter(i => i.name.includes(searchQuery.value));
-          }
+          if (filterLocation.value !== 'all') res = res.filter(i => i.location === filterLocation.value);
+          if (searchQuery.value) res = res.filter(i => i.name.includes(searchQuery.value));
           return res.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
         });
 
-        const imminentItems = computed(() => {
-          return items.value.filter(i => {
-            const days = calcDiffDays(i.expiryDate);
-            return days >= 0 && days <= 3;
-          });
-        });
+        const imminentItems = computed(() => items.value.filter(i => {
+          const days = calcDiffDays(i.expiryDate);
+          return days >= 0 && days <= 3;
+        }));
 
         const alertCount = computed(() => imminentItems.value.length);
 
         const calcDiffDays = (targetDate) => {
-          const today = new Date();
-          today.setHours(0,0,0,0);
+          const today = new Date(); today.setHours(0,0,0,0);
           const tDate = new Date(targetDate);
           return Math.ceil((tDate - today) / (1000 * 60 * 60 * 24));
         };
@@ -292,79 +290,118 @@
 
         const getStatusColor = (dateStr) => {
           const d = calcDiffDays(dateStr);
-          if (d < 0) return 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500';
+          if (d < 0) return 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:text-gray-500';
           if (d <= 3) return 'bg-red-50 text-red-900 border-red-200 dark:bg-red-900/30 dark:border-red-800';
           if (d <= 7) return 'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800';
-          return 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white';
+          return 'bg-white text-gray-900 border-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white';
         };
 
+        // 수동으로 폼 제출 시 실행
         const addItem = () => {
           if (!newItem.value.name) return;
+          
+          // 1. 목록에 추가
           items.value.push({
             id: Date.now().toString(),
             name: newItem.value.name,
             location: newItem.value.location,
             expiryDate: newItem.value.expiryDate,
           });
+
+          // 2. 나만의 사전에 학습 (사용자가 입력한 유통기한 일수 계산)
+          const daysDiff = calcDiffDays(newItem.value.expiryDate);
+          customDict.value[newItem.value.name] = {
+            loc: newItem.value.location,
+            days: daysDiff > 0 ? daysDiff : 7 // 과거 날짜면 7일로 기본 저장
+          };
+
+          // 3. 입력창 초기화
           newItem.value.name = '';
-          currentTab.value = 'list';
+          resetNewItemDate();
+          
+          // 알림용 효과로 탭 유지 또는 리스트로 이동
+          alert('추가되었습니다!');
         };
 
         const deleteItem = (id) => {
-          if(confirm('정말 삭제하시겠습니까?')) {
+          if(confirm('삭제하시겠습니까?')) {
             items.value = items.value.filter(i => i.id !== id);
           }
         };
 
+        // 핵심 기능: 영수증 텍스트 휴리스틱 분석 로직
         const handleImageUpload = async (event) => {
           const file = event.target.files[0];
           if (!file) return;
 
           isOcrLoading.value = true;
+          recognizedNames.value = []; // 초기화
+
           try {
+            // Tesseract v5 엔진 구동 (모바일에서 훨씬 안정적)
             const worker = await Tesseract.createWorker('kor');
             const { data: { text } } = await worker.recognize(file);
             await worker.terminate();
             
-            // OCR 텍스트 전처리: 불필요한 줄바꿈 및 특수문자 제거, 대괄호와 소괄호 제거
-            const cleanText = text.replace(/[\n\r]/g, ' ').replace(/[\[\]\(\)]/g, ''); 
+            // 영수증/구매내역 텍스트 정제 시작
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
+            let extracted = [];
+            
+            for (let line of lines) {
+              // 제외 1: 가격(원), 퍼센트(%), 옵션명 등 쓰레기 데이터가 있는 줄 무시
+              if (/(원|%|옵션|개당|쿠폰|할인|배송비|합계|결제)/.test(line)) continue;
+              // 제외 2: 숫자 비율이 너무 높은 줄 무시 (바코드 번호 등)
+              if (line.replace(/[^0-9]/g, '').length > line.length / 2) continue;
 
-            let foundIngreds = []; // 인식된 식재료들을 담을 배열
-            for (const [key, val] of Object.entries(ingredientDict)) {
-              if (cleanText.includes(key)) {
-                const d = new Date();
-                d.setDate(d.getDate() + val.days);
-                foundIngreds.push({
-                  name: key,
-                  location: val.loc,
-                  expiryDate: d.toISOString().split('T')[0],
-                });
+              // 정제: 괄호 및 대괄호 안의 내용(무게, 특가 등)을 완전히 제거
+              let cleanName = line.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
+              
+              // 정제: 남은 문자열 중 한글/영어가 최소 2글자 이상이어야 유효한 이름으로 간주
+              if (cleanName.replace(/[^가-힣a-zA-Z]/g, '').length >= 2) {
+                if (!extracted.includes(cleanName)) {
+                  extracted.push(cleanName);
+                }
               }
             }
 
-            if(foundIngreds.length > 0) {
-              // 여러 개가 인식되었을 경우 첫 번째 것을 newItem에 세팅하거나, 
-              // 사용자가 선택할 수 있는 UI를 추가하는 것을 고려해볼 수 있습니다.
-              const firstFound = foundIngreds[0];
-              newItem.value.name = firstFound.name;
-              newItem.value.location = firstFound.location;
-              newItem.value.expiryDate = firstFound.expiryDate;
-              currentTab.value = 'add'; // 추가 탭으로 이동
+            if(extracted.length > 0) {
+              recognizedNames.value = extracted; // 추출된 이름들을 버튼으로 뿌림
             } else {
-              alert('인식된 식재료 정보가 부족합니다. 수동으로 입력해주세요.');
-              currentTab.value = 'add'; // 추가 탭으로 이동
+              alert('사진에서 식재료 이름을 분리해내지 못했습니다. 직접 입력해주세요.\n(인식된 원본 글자수: ' + text.length + ')');
             }
           } catch (e) {
             console.error(e);
-            alert('사진 인식에 실패했습니다.');
+            alert(`사진 판독 중 오류가 발생했습니다.\n상세: ${e.message}`);
           } finally {
             isOcrLoading.value = false;
-            event.target.value = '';
+            event.target.value = ''; // 동일한 사진 다시 올릴 수 있도록 리셋
           }
         };
 
+        // 추출된 식재료 버튼을 클릭했을 때
+        const selectRecognizedName = (name) => {
+          newItem.value.name = name;
+          
+          // 사용자가 예전에 추가해서 학습된 데이터가 있는지 확인
+          if (customDict.value[name]) {
+            newItem.value.location = customDict.value[name].loc;
+            const d = new Date();
+            d.setDate(d.getDate() + customDict.value[name].days);
+            newItem.value.expiryDate = d.toISOString().split('T')[0];
+          } else {
+            // 처음 보는 식재료면 기본값 세팅
+            newItem.value.location = '냉장';
+            resetNewItemDate();
+          }
+          
+          // 선택한 항목 리스트에서 제거 (편의상)
+          recognizedNames.value = recognizedNames.value.filter(n => n !== name);
+        };
+
+        // --- 기타 설정 관련 ---
         const exportData = () => {
-          const dataStr = JSON.stringify(items.value);
+          const payload = { items: items.value, dict: customDict.value };
+          const dataStr = JSON.stringify(payload);
           const blob = new Blob([dataStr], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -372,9 +409,8 @@
           a.download = `freshmate_backup_${new Date().toISOString().slice(0,10)}.json`;
           a.click();
           URL.revokeObjectURL(url);
-          
           settings.value.lastBackup = new Date().toLocaleString();
-          alert('백업 파일이 다운로드 되었습니다.\niOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
+          alert('다운로드 되었습니다.\niOS [파일] 앱(iCloud)에 저장해두세요.');
         };
 
         const importData = (event) => {
@@ -384,9 +420,13 @@
           reader.onload = (e) => {
             try {
               const data = JSON.parse(e.target.result);
-              if (Array.isArray(data)) {
-                items.value = data;
+              if (data.items) {
+                items.value = data.items;
+                if(data.dict) customDict.value = data.dict;
                 alert('복원이 완료되었습니다.');
+              } else if (Array.isArray(data)) { // 구버전 호환
+                items.value = data;
+                alert('목록 복원이 완료되었습니다.');
               }
             } catch (err) {
               alert('잘못된 백업 파일입니다.');
@@ -396,56 +436,40 @@
         };
 
         const exportCSV = () => {
-          let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-          csvContent += "이름,보관위치,소비기한\n";
+          let csvContent = "data:text/csv;charset=utf-8,\uFEFF이름,보관위치,소비기한\n";
           items.value.forEach(row => {
             csvContent += `${row.name},${row.location},${row.expiryDate}\n`;
           });
-          const encodedUri = encodeURI(csvContent);
           const a = document.createElement("a");
-          a.setAttribute("href", encodedUri);
+          a.setAttribute("href", encodeURI(csvContent));
           a.setAttribute("download", "freshmate_list.csv");
           a.click();
         };
 
-        const addSampleData = () => {
-          const today = new Date();
-          const fmt = (d) => d.toISOString().split('T')[0];
-          
-          const d1 = new Date(today); d1.setDate(d1.getDate() + 2);
-          const d2 = new Date(today); d2.setDate(d2.getDate() + 15);
-          const d3 = new Date(today); d3.setDate(d3.getDate() - 1);
-
-          items.value.push(
-            { id: Date.now()+'1', name: '우유', location: '냉장', expiryDate: fmt(d1) },
-            { id: Date.now()+'2', name: '돼지고기', location: '냉동', expiryDate: fmt(d2) },
-            { id: Date.now()+'3', name: '두부', location: '냉장', expiryDate: fmt(d3) }
-          );
-          currentTab.value = 'list';
-        };
-
         const clearAllData = () => {
-          if(confirm('정말 모든 데이터를 삭제하시겠습니까? 복구할 수 없습니다.')) {
+          if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(학습된 식재료 사전은 유지됩니다)')) {
             items.value = [];
-            alert('초기화 되었습니다.');
           }
         };
 
         return {
           items, currentTab, isDark, toggleTheme,
           searchQuery, filterLocation, filteredItems, imminentItems, alertCount,
-          newItem, addItem, deleteItem, handleImageUpload, isOcrLoading,
+          newItem, addItem, deleteItem, 
+          handleImageUpload, isOcrLoading, recognizedNames, selectRecognizedName,
           getDday, getStatusColor,
-          settings, exportData, importData, exportCSV, addSampleData, clearAllData
+          settings, exportData, importData, exportCSV, clearAllData
         };
       }
     }).mount('#app');
 
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js');
-      });
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
   </script>
+  <style>
+    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
 </body>
 </html>
