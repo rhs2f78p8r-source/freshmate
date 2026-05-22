@@ -2,7 +2,6 @@
 <html lang="ko" class="light">
 <head>
   <meta charset="UTF-8">
-  <!-- 모바일 및 PWA 메타 태그 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -10,18 +9,13 @@
   <meta name="theme-color" content="#10B981">
   <title>FreshMate - 똑똑한 식재료 관리</title>
 
-  <!-- PWA Manifest -->
   <link rel="manifest" href="./manifest.json">
-  <!-- 아이폰 홈 화면 아이콘 (192x192 픽셀의 icon.png 파일을 같은 폴더에 넣어주세요) -->
   <link rel="apple-touch-icon" href="./icon.png">
 
-  <!-- 라이브러리 CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-  <!-- Tesseract.js (브라우저 OCR) -->
   <script src="https://unpkg.com/tesseract.js@v4.1.4/dist/tesseract.min.js"></script>
-  <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <script>
@@ -32,8 +26,8 @@
   </script>
   <style>
     body { -webkit-tap-highlight-color: transparent; }
-    /* 숨김 스크롤바 */
     ::-webkit-scrollbar { width: 0px; background: transparent; }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
@@ -56,7 +50,6 @@
       
       <!-- 탭 1: 식재료 목록 -->
       <div v-if="currentTab === 'list'" class="space-y-4">
-        <!-- 검색 및 필터 -->
         <div class="flex gap-2">
           <div class="relative flex-1">
             <i class="ph ph-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
@@ -70,7 +63,6 @@
           </select>
         </div>
 
-        <!-- 목록 -->
         <div v-if="filteredItems.length === 0" class="text-center text-gray-500 py-10">
           <i class="ph ph-empty text-4xl mb-2"></i><p>등록된 식재료가 없습니다.</p>
         </div>
@@ -91,7 +83,8 @@
       <!-- 탭 2: 식재료 추가 (OCR) -->
       <div v-if="currentTab === 'add'" class="space-y-6">
         <div class="bg-gray-100 dark:bg-gray-900 p-6 rounded-xl text-center border-2 border-dashed border-gray-300 dark:border-gray-700 relative">
-          <input type="file" accept="image/*" capture="environment" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+          <!-- 수정: capture="environment" 제거하여 아이폰에서 갤러리 선택 옵션이 뜨도록 수정함 -->
+          <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
           <div v-if="isOcrLoading" class="flex flex-col items-center">
             <i class="ph ph-spinner-gap animate-spin text-4xl text-primary mb-2"></i>
             <p class="text-sm font-bold text-primary">영수증/라벨 분석 중... (최대 10초)</p>
@@ -145,7 +138,6 @@
 
       <!-- 탭 4: 설정 -->
       <div v-if="currentTab === 'settings'" class="space-y-6">
-        
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
           <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 백업/복원 (iCloud)</div>
           <div class="p-4 space-y-4 text-sm text-gray-600 dark:text-gray-400">
@@ -200,7 +192,6 @@
   <script>
     const { createApp, ref, computed, onMounted, watch } = Vue;
 
-    // 식재료 자동 분류 사전 (한국어)
     const ingredientDict = {
       '우유': { loc: '냉장', days: 10 },
       '계란': { loc: '냉장', days: 20 },
@@ -226,7 +217,6 @@
         
         const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
 
-        // 데이터 초기 로드
         onMounted(async () => {
           const storedItems = await localforage.getItem('freshmate_items');
           if (storedItems) items.value = storedItems;
@@ -240,13 +230,11 @@
             document.documentElement.classList.add('dark');
           }
 
-          // 기본 소비기한 오늘+7일로 설정
           const d = new Date();
           d.setDate(d.getDate() + 7);
           newItem.value.expiryDate = d.toISOString().split('T')[0];
         });
 
-        // 데이터 저장 감시자
         watch(items, (newVal) => {
           localforage.setItem('freshmate_items', newVal);
         }, { deep: true });
@@ -255,7 +243,6 @@
           localforage.setItem('freshmate_settings', newVal);
         }, { deep: true });
 
-        // 테마 토글
         const toggleTheme = () => {
           isDark.value = !isDark.value;
           if (isDark.value) {
@@ -267,7 +254,6 @@
           }
         };
 
-        // 목록 계산 로직
         const filteredItems = computed(() => {
           let res = items.value;
           if (filterLocation.value !== 'all') {
@@ -276,20 +262,18 @@
           if (searchQuery.value) {
             res = res.filter(i => i.name.includes(searchQuery.value));
           }
-          // 임박한 순으로 정렬
           return res.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
         });
 
         const imminentItems = computed(() => {
           return items.value.filter(i => {
             const days = calcDiffDays(i.expiryDate);
-            return days >= 0 && days <= 3; // 3일 이하 남은 것만 알림
+            return days >= 0 && days <= 3;
           });
         });
 
         const alertCount = computed(() => imminentItems.value.length);
 
-        // 시간 계산 도우미
         const calcDiffDays = (targetDate) => {
           const today = new Date();
           today.setHours(0,0,0,0);
@@ -306,13 +290,12 @@
 
         const getStatusColor = (dateStr) => {
           const d = calcDiffDays(dateStr);
-          if (d < 0) return 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'; // 지남
-          if (d <= 3) return 'bg-red-50 text-red-900 border-red-200 dark:bg-red-900/30 dark:border-red-800'; // 임박
-          if (d <= 7) return 'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800'; // 주의
-          return 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white'; // 안전
+          if (d < 0) return 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500';
+          if (d <= 3) return 'bg-red-50 text-red-900 border-red-200 dark:bg-red-900/30 dark:border-red-800';
+          if (d <= 7) return 'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800';
+          return 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white';
         };
 
-        // CRUD 로직
         const addItem = () => {
           if (!newItem.value.name) return;
           items.value.push({
@@ -331,19 +314,16 @@
           }
         };
 
-        // OCR 로직
         const handleImageUpload = async (event) => {
           const file = event.target.files[0];
           if (!file) return;
 
           isOcrLoading.value = true;
           try {
-            // Tesseract 브라우저 구동
             const worker = await Tesseract.createWorker('kor');
             const { data: { text } } = await worker.recognize(file);
             await worker.terminate();
             
-            // 텍스트 분석하여 사전에 있는 단어 찾기
             let found = false;
             for (const [key, val] of Object.entries(ingredientDict)) {
               if (text.includes(key)) {
@@ -364,11 +344,10 @@
             alert('사진 인식에 실패했습니다.');
           } finally {
             isOcrLoading.value = false;
-            event.target.value = ''; // input 초기화
+            event.target.value = '';
           }
         };
 
-        // 설정 로직
         const exportData = () => {
           const dataStr = JSON.stringify(items.value);
           const blob = new Blob([dataStr], { type: 'application/json' });
@@ -380,8 +359,8 @@
           URL.revokeObjectURL(url);
           
           settings.value.lastBackup = new Date().toLocaleString();
-          alert('백업 파일이 다운로드 되었습니다.
-iOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
+          // 수정: 문자열 줄바꿈 오류 수정
+          alert('백업 파일이 다운로드 되었습니다.\niOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
         };
 
         const importData = (event) => {
@@ -403,12 +382,11 @@ iOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
         };
 
         const exportCSV = () => {
-          let csvContent = "data:text/csv;charset=utf-8,﻿"; // 한글 깨짐 방지
-          csvContent += "이름,보관위치,소비기한
-";
+          let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+          // 수정: 문자열 줄바꿈 오류 수정
+          csvContent += "이름,보관위치,소비기한\n";
           items.value.forEach(row => {
-            csvContent += `${row.name},${row.location},${row.expiryDate}
-`;
+            csvContent += `${row.name},${row.location},${row.expiryDate}\n`;
           });
           const encodedUri = encodeURI(csvContent);
           const a = document.createElement("a");
@@ -450,16 +428,11 @@ iOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
       }
     }).mount('#app');
 
-    // Service Worker 등록
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js');
       });
     }
   </script>
-  <style>
-    /* 아이폰 하단 홈바(Safe Area) 패딩 지원 */
-    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-  </style>
 </body>
 </html>
