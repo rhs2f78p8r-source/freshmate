@@ -7,6 +7,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="FreshMate">
   <meta name="theme-color" content="#10B981">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>FreshMate - 똑똑한 식재료 관리</title>
 
   <link rel="manifest" href="./manifest.json">
@@ -15,7 +18,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-  <script src="https://unpkg.com/tesseract.js@v5.1.0/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <script>
@@ -87,8 +90,8 @@
           <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" :disabled="isOcrLoading">
           <div v-if="isOcrLoading" class="flex flex-col items-center py-4">
             <i class="ph ph-scan animate-pulse text-5xl text-primary mb-3"></i>
-            <p class="font-bold text-primary">사진을 분석 중입니다...</p>
-            <p class="text-xs text-gray-500 mt-1">인터넷 환경에 따라 5~15초 소요됩니다</p>
+            <p class="font-bold text-primary">{{ ocrProgressText }}</p>
+            <p class="text-xs text-gray-500 mt-1">인터넷 환경에 따라 약간의 시간이 소요됩니다</p>
           </div>
           <div v-else class="py-2">
             <i class="ph ph-camera-plus text-5xl text-primary mb-2"></i>
@@ -209,6 +212,7 @@
         const searchQuery = ref('');
         const filterLocation = ref('all');
         const isOcrLoading = ref(false);
+        const ocrProgressText = ref('사진을 분석 중입니다...'); // 진행 상태 텍스트
         const settings = ref({ lastBackup: '' });
         
         const recognizedNames = ref([]);
@@ -300,7 +304,6 @@
             expiryDate: newItem.value.expiryDate,
           });
 
-          // 입력된 식재료 정보 내부 DB에 자가 학습
           const daysDiff = calcDiffDays(newItem.value.expiryDate);
           customDict.value[newItem.value.name] = {
             loc: newItem.value.location,
@@ -318,16 +321,16 @@
           }
         };
 
-        // --- 아이폰 메모리 초과 방지 캔버스 리사이징 및 OCR 로직 ---
         const handleImageUpload = async (event) => {
           const file = event.target.files[0];
           if (!file) return;
 
           isOcrLoading.value = true;
+          ocrProgressText.value = '이미지 최적화 중...';
           recognizedNames.value = []; 
 
           try {
-            // 1. 메모리 초과 방지를 위한 이미지 압축 (최대 너비 1000px로 제한)
+            // 이미지 리사이징 
             const img = new Image();
             img.src = URL.createObjectURL(file);
             await new Promise((resolve, reject) => {
@@ -350,33 +353,36 @@
             canvas.height = height;
             ctx.drawImage(img, 0, 0, width, height);
 
-            // 캔버스 데이터를 가벼운 jpeg 형태로 변환
             const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-            URL.revokeObjectURL(img.src); // 원본 메모리 해제
+            URL.revokeObjectURL(img.src);
 
-            // 2. 가벼워진 이미지를 최신 Tesseract v5 엔진에 전달
+            // OCR 엔진 실행 (진행률 표시)
             const result = await Tesseract.recognize(
               base64Image,
               'kor',
-              { logger: m => console.log('OCR 진행상태:', m.status, m.progress) }
+              { 
+                logger: m => {
+                  if (m.status === 'recognizing text') {
+                    ocrProgressText.value = `텍스트 분석 중... (${Math.round(m.progress * 100)}%)`;
+                  } else {
+                    ocrProgressText.value = `엔진 준비 중... (${Math.round(m.progress * 100)}%)`;
+                  }
+                } 
+              }
             );
             
             const text = result.data.text;
 
-            // 3. 지능형 텍스트 필터링 (쓰레기 텍스트 제거)
+            // 텍스트 필터링
             const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
             let extracted = [];
             
             for (let line of lines) {
-              // 가격, 할인율, 옵션 관련 불필요한 줄 건너뛰기
               if (/(원|%|옵션|개당|쿠폰|할인|배송비|합계|결제|총액|금액|잔액|포인트)/.test(line)) continue;
-              // 숫자가 절반 이상인 줄 건너뛰기 (바코드, 날짜 등)
               if (line.replace(/[^0-9]/g, '').length > line.length / 2) continue;
 
-              // 대괄호[], 소괄호() 안의 글자(무게, 행사이름 등) 지우기
               let cleanName = line.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
               
-              // 최종적으로 한글이 2글자 이상 연속으로 포함된 경우만 유효한 식재료로 판단
               if (/[가-힣]{2,}/.test(cleanName)) { 
                 if (!extracted.includes(cleanName)) {
                   extracted.push(cleanName);
@@ -387,21 +393,21 @@
             if(extracted.length > 0) {
               recognizedNames.value = extracted;
             } else {
-              alert('사진에서 식재료 이름을 찾지 못했습니다. 화질이 좋지 않거나 지원하지 않는 폰트일 수 있습니다.\n아래 빈칸에 직접 입력해주세요.');
+              alert('사진에서 식재료 이름을 찾지 못했습니다.\n직접 입력해주세요.');
             }
           } catch (e) {
             console.error('OCR Error:', e);
-            alert(`사진 판독 중 일시적인 오류가 발생했습니다.\n상세 사유: ${e.message}`);
+            // 에러 메시지를 명확하게 표시
+            alert(`사진 판독 중 일시적인 오류가 발생했습니다.\n에러 내용: ${e.message}`);
           } finally {
             isOcrLoading.value = false;
-            event.target.value = ''; // 동일한 사진 다시 올릴 수 있도록 인풋 리셋
+            ocrProgressText.value = '사진을 분석 중입니다...';
+            event.target.value = ''; 
           }
         };
 
         const selectRecognizedName = (name) => {
           newItem.value.name = name;
-          
-          // 예전에 추가해서 학습된 데이터가 있다면 날짜/위치 자동 세팅
           if (customDict.value[name]) {
             newItem.value.location = customDict.value[name].loc;
             const d = new Date();
@@ -411,8 +417,6 @@
             newItem.value.location = '냉장';
             resetNewItemDate();
           }
-          
-          // 선택 후 버튼 목록에서 제거
           recognizedNames.value = recognizedNames.value.filter(n => n !== name);
         };
 
@@ -473,7 +477,7 @@
           items, currentTab, isDark, toggleTheme,
           searchQuery, filterLocation, filteredItems, imminentItems, alertCount,
           newItem, addItem, deleteItem, 
-          handleImageUpload, isOcrLoading, recognizedNames, selectRecognizedName,
+          handleImageUpload, isOcrLoading, ocrProgressText, recognizedNames, selectRecognizedName,
           getDday, getStatusColor,
           settings, exportData, importData, exportCSV, clearAllData
         };
