@@ -221,14 +221,18 @@
         const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
 
         onMounted(async () => {
-          const storedItems = await localforage.getItem('freshmate_items');
-          if (storedItems) items.value = storedItems;
-          
-          const storedSettings = await localforage.getItem('freshmate_settings');
-          if (storedSettings) settings.value = storedSettings;
+          try {
+            const storedItems = await localforage.getItem('freshmate_items');
+            if (storedItems) items.value = storedItems;
+            
+            const storedSettings = await localforage.getItem('freshmate_settings');
+            if (storedSettings) settings.value = storedSettings;
 
-          const storedDict = await localforage.getItem('freshmate_dict');
-          if (storedDict) customDict.value = storedDict;
+            const storedDict = await localforage.getItem('freshmate_dict');
+            if (storedDict) customDict.value = storedDict;
+          } catch (e) {
+            console.error("로컬 저장소 로드 실패:", e);
+          }
 
           const savedTheme = localStorage.getItem('theme');
           if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -238,9 +242,21 @@
           resetNewItemDate();
         });
 
-        watch(items, (newVal) => localforage.setItem('freshmate_items', newVal), { deep: true });
-        watch(settings, (newVal) => localforage.setItem('freshmate_settings', newVal), { deep: true });
-        watch(customDict, (newVal) => localforage.setItem('freshmate_dict', newVal), { deep: true });
+        // 🌟 명시적인 로컬 저장 프로세스 (Vue Proxy 제거 후 순수 데이터만 IndexedDB에 기록)
+        const saveItemsToStorage = async () => {
+          const rawData = JSON.parse(JSON.stringify(items.value));
+          await localforage.setItem('freshmate_items', rawData);
+        };
+
+        const saveDictToStorage = async () => {
+          const rawData = JSON.parse(JSON.stringify(customDict.value));
+          await localforage.setItem('freshmate_dict', rawData);
+        };
+
+        const saveSettingsToStorage = async () => {
+          const rawData = JSON.parse(JSON.stringify(settings.value));
+          await localforage.setItem('freshmate_settings', rawData);
+        };
 
         const resetNewItemDate = () => {
           const d = new Date();
@@ -294,7 +310,7 @@
           return 'bg-white text-gray-900 border-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white';
         };
 
-        const addItem = () => {
+        const addItem = async () => {
           if (!newItem.value.name) return;
           
           items.value.push({
@@ -310,14 +326,22 @@
             days: daysDiff > 0 ? daysDiff : 7
           };
 
+          // 변동 즉시 로컬 저장소 강제 저장
+          await saveItemsToStorage();
+          await saveDictToStorage();
+
           newItem.value.name = '';
           resetNewItemDate();
+          
+          // 🌟 추가 후 자동으로 '목록' 탭으로 화면 전환하여 저장 결과 확인
+          currentTab.value = 'list';
           alert('목록에 성공적으로 추가되었습니다!');
         };
 
-        const deleteItem = (id) => {
+        const deleteItem = async (id) => {
           if(confirm('이 식재료를 삭제하시겠습니까?')) {
             items.value = items.value.filter(i => i.id !== id);
+            await saveItemsToStorage(); // 삭제 즉시 동기화
           }
         };
 
@@ -424,7 +448,7 @@
           recognizedNames.value = recognizedNames.value.filter(n => n !== name);
         };
 
-        const exportData = () => {
+        const exportData = async () => {
           const payload = { items: items.value, dict: customDict.value };
           const dataStr = JSON.stringify(payload);
           const blob = new Blob([dataStr], { type: 'application/json' });
@@ -434,25 +458,29 @@
           a.download = `freshmate_backup_${new Date().toISOString().slice(0,10)}.json`;
           a.click();
           URL.revokeObjectURL(url);
+          
           settings.value.lastBackup = new Date().toLocaleString();
+          await saveSettingsToStorage(); // 백업 시각 영구 기록
+
           alert('다운로드 되었습니다.\niOS [파일] 앱(iCloud)에 저장해두세요.');
         };
 
-        const importData = (event) => {
+        const importData = async (event) => {
           const file = event.target.files[0];
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = (e) => {
+          reader.onload = async (e) => {
             try {
               const data = JSON.parse(e.target.result);
               if (data.items) {
                 items.value = data.items;
                 if(data.dict) customDict.value = data.dict;
-                alert('복원이 완료되었습니다.');
               } else if (Array.isArray(data)) { 
                 items.value = data;
-                alert('목록 복원이 완료되었습니다.');
               }
+              await saveItemsToStorage();
+              await saveDictToStorage();
+              alert('복원이 완료되었습니다.');
             } catch (err) {
               alert('잘못된 백업 파일입니다.');
             }
@@ -471,9 +499,10 @@
           a.click();
         };
 
-        const clearAllData = () => {
+        const clearAllData = async () => {
           if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(AI가 학습한 식재료 사전 데이터는 유지됩니다)')) {
             items.value = [];
+            await saveItemsToStorage(); // 초기화 동기화
           }
         };
 
