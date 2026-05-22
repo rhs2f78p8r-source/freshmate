@@ -15,7 +15,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://unpkg.com/tesseract.js@v5.1.0/dist/tesseract.min.js"></script>
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <script>
@@ -84,10 +84,10 @@
       <div v-if="currentTab === 'add'" class="space-y-6">
         
         <div class="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-xl text-center border-2 border-dashed border-primary/50 relative overflow-hidden transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
-          <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+          <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" :disabled="isOcrLoading">
           <div v-if="isOcrLoading" class="flex flex-col items-center py-4">
             <i class="ph ph-scan animate-pulse text-5xl text-primary mb-3"></i>
-            <p class="font-bold text-primary">이미지 판독 중...</p>
+            <p class="font-bold text-primary">사진을 분석 중입니다...</p>
             <p class="text-xs text-gray-500 mt-1">인터넷 환경에 따라 5~15초 소요됩니다</p>
           </div>
           <div v-else class="py-2">
@@ -103,7 +103,7 @@
           </p>
           <div class="flex flex-wrap gap-2">
             <button v-for="name in recognizedNames" :key="name" @click="selectRecognizedName(name)" 
-              class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-sm rounded-full shadow-sm hover:border-primary text-gray-800 dark:text-gray-200 active:scale-95 transition-all">
+              class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-sm rounded-full shadow-sm hover:border-primary text-gray-800 dark:text-gray-200 active:scale-95 transition-all text-left">
               {{ name }}
             </button>
           </div>
@@ -211,15 +211,11 @@
         const isOcrLoading = ref(false);
         const settings = ref({ lastBackup: '' });
         
-        // 텍스트 추출로 찾은 식재료 이름 배열
         const recognizedNames = ref([]);
-        
-        // 앱이 스스로 학습하는 나만의 식재료 사전 (localforage에 저장됨)
         const customDict = ref({});
         
         const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
 
-        // 초기 데이터 로드
         onMounted(async () => {
           const storedItems = await localforage.getItem('freshmate_items');
           if (storedItems) items.value = storedItems;
@@ -235,18 +231,16 @@
             isDark.value = true;
             document.documentElement.classList.add('dark');
           }
-
           resetNewItemDate();
         });
 
-        // 상태 자동 저장
         watch(items, (newVal) => localforage.setItem('freshmate_items', newVal), { deep: true });
         watch(settings, (newVal) => localforage.setItem('freshmate_settings', newVal), { deep: true });
         watch(customDict, (newVal) => localforage.setItem('freshmate_dict', newVal), { deep: true });
 
         const resetNewItemDate = () => {
           const d = new Date();
-          d.setDate(d.getDate() + 7); // 기본 7일
+          d.setDate(d.getDate() + 7);
           newItem.value.expiryDate = d.toISOString().split('T')[0];
         }
 
@@ -296,11 +290,9 @@
           return 'bg-white text-gray-900 border-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white';
         };
 
-        // 수동으로 폼 제출 시 실행
         const addItem = () => {
           if (!newItem.value.name) return;
           
-          // 1. 목록에 추가
           items.value.push({
             id: Date.now().toString(),
             name: newItem.value.name,
@@ -308,56 +300,84 @@
             expiryDate: newItem.value.expiryDate,
           });
 
-          // 2. 나만의 사전에 학습 (사용자가 입력한 유통기한 일수 계산)
+          // 입력된 식재료 정보 내부 DB에 자가 학습
           const daysDiff = calcDiffDays(newItem.value.expiryDate);
           customDict.value[newItem.value.name] = {
             loc: newItem.value.location,
-            days: daysDiff > 0 ? daysDiff : 7 // 과거 날짜면 7일로 기본 저장
+            days: daysDiff > 0 ? daysDiff : 7
           };
 
-          // 3. 입력창 초기화
           newItem.value.name = '';
           resetNewItemDate();
-          
-          // 알림용 효과로 탭 유지 또는 리스트로 이동
-          alert('추가되었습니다!');
+          alert('목록에 성공적으로 추가되었습니다!');
         };
 
         const deleteItem = (id) => {
-          if(confirm('삭제하시겠습니까?')) {
+          if(confirm('이 식재료를 삭제하시겠습니까?')) {
             items.value = items.value.filter(i => i.id !== id);
           }
         };
 
-        // 핵심 기능: 영수증 텍스트 휴리스틱 분석 로직
+        // --- 아이폰 메모리 초과 방지 캔버스 리사이징 및 OCR 로직 ---
         const handleImageUpload = async (event) => {
           const file = event.target.files[0];
           if (!file) return;
 
           isOcrLoading.value = true;
-          recognizedNames.value = []; // 초기화
+          recognizedNames.value = []; 
 
           try {
-            // Tesseract v5 엔진 구동 (모바일에서 훨씬 안정적)
-            const worker = await Tesseract.createWorker('kor');
-            const { data: { text } } = await worker.recognize(file);
-            await worker.terminate();
+            // 1. 메모리 초과 방지를 위한 이미지 압축 (최대 너비 1000px로 제한)
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            await new Promise((resolve, reject) => {
+              img.onload = resolve;
+              img.onerror = reject;
+            });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const MAX_WIDTH = 1000; 
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 캔버스 데이터를 가벼운 jpeg 형태로 변환
+            const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+            URL.revokeObjectURL(img.src); // 원본 메모리 해제
+
+            // 2. 가벼워진 이미지를 최신 Tesseract v5 엔진에 전달
+            const result = await Tesseract.recognize(
+              base64Image,
+              'kor',
+              { logger: m => console.log('OCR 진행상태:', m.status, m.progress) }
+            );
             
-            // 영수증/구매내역 텍스트 정제 시작
+            const text = result.data.text;
+
+            // 3. 지능형 텍스트 필터링 (쓰레기 텍스트 제거)
             const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
             let extracted = [];
             
             for (let line of lines) {
-              // 제외 1: 가격(원), 퍼센트(%), 옵션명 등 쓰레기 데이터가 있는 줄 무시
-              if (/(원|%|옵션|개당|쿠폰|할인|배송비|합계|결제)/.test(line)) continue;
-              // 제외 2: 숫자 비율이 너무 높은 줄 무시 (바코드 번호 등)
+              // 가격, 할인율, 옵션 관련 불필요한 줄 건너뛰기
+              if (/(원|%|옵션|개당|쿠폰|할인|배송비|합계|결제|총액|금액|잔액|포인트)/.test(line)) continue;
+              // 숫자가 절반 이상인 줄 건너뛰기 (바코드, 날짜 등)
               if (line.replace(/[^0-9]/g, '').length > line.length / 2) continue;
 
-              // 정제: 괄호 및 대괄호 안의 내용(무게, 특가 등)을 완전히 제거
+              // 대괄호[], 소괄호() 안의 글자(무게, 행사이름 등) 지우기
               let cleanName = line.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
               
-              // 정제: 남은 문자열 중 한글/영어가 최소 2글자 이상이어야 유효한 이름으로 간주
-              if (cleanName.replace(/[^가-힣a-zA-Z]/g, '').length >= 2) {
+              // 최종적으로 한글이 2글자 이상 연속으로 포함된 경우만 유효한 식재료로 판단
+              if (/[가-힣]{2,}/.test(cleanName)) { 
                 if (!extracted.includes(cleanName)) {
                   extracted.push(cleanName);
                 }
@@ -365,40 +385,37 @@
             }
 
             if(extracted.length > 0) {
-              recognizedNames.value = extracted; // 추출된 이름들을 버튼으로 뿌림
+              recognizedNames.value = extracted;
             } else {
-              alert('사진에서 식재료 이름을 분리해내지 못했습니다. 직접 입력해주세요.\n(인식된 원본 글자수: ' + text.length + ')');
+              alert('사진에서 식재료 이름을 찾지 못했습니다. 화질이 좋지 않거나 지원하지 않는 폰트일 수 있습니다.\n아래 빈칸에 직접 입력해주세요.');
             }
           } catch (e) {
-            console.error(e);
-            alert(`사진 판독 중 오류가 발생했습니다.\n상세: ${e.message}`);
+            console.error('OCR Error:', e);
+            alert(`사진 판독 중 일시적인 오류가 발생했습니다.\n상세 사유: ${e.message}`);
           } finally {
             isOcrLoading.value = false;
-            event.target.value = ''; // 동일한 사진 다시 올릴 수 있도록 리셋
+            event.target.value = ''; // 동일한 사진 다시 올릴 수 있도록 인풋 리셋
           }
         };
 
-        // 추출된 식재료 버튼을 클릭했을 때
         const selectRecognizedName = (name) => {
           newItem.value.name = name;
           
-          // 사용자가 예전에 추가해서 학습된 데이터가 있는지 확인
+          // 예전에 추가해서 학습된 데이터가 있다면 날짜/위치 자동 세팅
           if (customDict.value[name]) {
             newItem.value.location = customDict.value[name].loc;
             const d = new Date();
             d.setDate(d.getDate() + customDict.value[name].days);
             newItem.value.expiryDate = d.toISOString().split('T')[0];
           } else {
-            // 처음 보는 식재료면 기본값 세팅
             newItem.value.location = '냉장';
             resetNewItemDate();
           }
           
-          // 선택한 항목 리스트에서 제거 (편의상)
+          // 선택 후 버튼 목록에서 제거
           recognizedNames.value = recognizedNames.value.filter(n => n !== name);
         };
 
-        // --- 기타 설정 관련 ---
         const exportData = () => {
           const payload = { items: items.value, dict: customDict.value };
           const dataStr = JSON.stringify(payload);
@@ -424,7 +441,7 @@
                 items.value = data.items;
                 if(data.dict) customDict.value = data.dict;
                 alert('복원이 완료되었습니다.');
-              } else if (Array.isArray(data)) { // 구버전 호환
+              } else if (Array.isArray(data)) { 
                 items.value = data;
                 alert('목록 복원이 완료되었습니다.');
               }
@@ -447,7 +464,7 @@
         };
 
         const clearAllData = () => {
-          if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(학습된 식재료 사전은 유지됩니다)')) {
+          if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(AI가 학습한 식재료 사전 데이터는 유지됩니다)')) {
             items.value = [];
           }
         };
