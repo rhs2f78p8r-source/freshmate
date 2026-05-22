@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ko" class="light">
+<head>
+  <meta charset="UTF-8">
+  <!-- 모바일 및 PWA 메타 태그 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FreshMate">
+  <meta name="theme-color" content="#10B981">
+  <title>FreshMate - 똑똑한 식재료 관리</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="./manifest.json">
+  <!-- 아이폰 홈 화면 아이콘 (192x192 픽셀의 icon.png 파일을 같은 폴더에 넣어주세요) -->
+  <link rel="apple-touch-icon" href="./icon.png">
+
+  <!-- 라이브러리 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+  <!-- Tesseract.js (브라우저 OCR) -->
+  <script src="https://unpkg.com/tesseract.js@v4.1.4/dist/tesseract.min.js"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: { primary: '#10B981' } } }
+    }
+  </script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    /* 숨김 스크롤바 */
+    ::-webkit-scrollbar { width: 0px; background: transparent; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
+  <div id="app" class="max-w-md mx-auto h-screen flex flex-col bg-white dark:bg-gray-800 shadow-xl overflow-hidden relative">
+    
+    <!-- 헤더 -->
+    <header class="flex justify-between items-center p-4 bg-primary text-white shrink-0">
+      <h1 class="text-xl font-bold tracking-wide"><i class="ph-fill ph-leaf"></i> FreshMate</h1>
+      <div class="flex gap-4">
+        <button @click="toggleTheme"><i class="ph" :class="isDark ? 'ph-sun' : 'ph-moon'" style="font-size: 1.5rem;"></i></button>
+        <button @click="currentTab = 'notifications'" class="relative">
+          <i class="ph ph-bell" style="font-size: 1.5rem;"></i>
+          <span v-if="alertCount > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{ alertCount }}</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="flex-1 overflow-y-auto p-4 pb-24">
+      
+      <!-- 탭 1: 식재료 목록 -->
+      <div v-if="currentTab === 'list'" class="space-y-4">
+        <!-- 검색 및 필터 -->
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <i class="ph ph-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+            <input v-model="searchQuery" type="text" placeholder="식재료 검색..." class="w-full pl-9 pr-3 py-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary">
+          </div>
+          <select v-model="filterLocation" class="rounded-lg border dark:border-gray-700 dark:bg-gray-900 px-2 focus:outline-none focus:ring-2 focus:ring-primary">
+            <option value="all">전체</option>
+            <option value="냉장">냉장</option>
+            <option value="냉동">냉동</option>
+            <option value="실온">실온</option>
+          </select>
+        </div>
+
+        <!-- 목록 -->
+        <div v-if="filteredItems.length === 0" class="text-center text-gray-500 py-10">
+          <i class="ph ph-empty text-4xl mb-2"></i><p>등록된 식재료가 없습니다.</p>
+        </div>
+        <div v-else class="space-y-3">
+          <div v-for="item in filteredItems" :key="item.id" class="p-3 rounded-xl border dark:border-gray-700 flex justify-between items-center shadow-sm" :class="getStatusColor(item.expiryDate)">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-lg">{{ item.name }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-white/50 dark:bg-black/20">{{ item.location }}</span>
+              </div>
+              <div class="text-sm opacity-80 mt-1">소비기한: {{ item.expiryDate }} ({{ getDday(item.expiryDate) }})</div>
+            </div>
+            <button @click="deleteItem(item.id)" class="text-red-500 hover:text-red-700 p-2"><i class="ph ph-trash text-xl"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 탭 2: 식재료 추가 (OCR) -->
+      <div v-if="currentTab === 'add'" class="space-y-6">
+        <div class="bg-gray-100 dark:bg-gray-900 p-6 rounded-xl text-center border-2 border-dashed border-gray-300 dark:border-gray-700 relative">
+          <input type="file" accept="image/*" capture="environment" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+          <div v-if="isOcrLoading" class="flex flex-col items-center">
+            <i class="ph ph-spinner-gap animate-spin text-4xl text-primary mb-2"></i>
+            <p class="text-sm font-bold text-primary">영수증/라벨 분석 중... (최대 10초)</p>
+          </div>
+          <div v-else>
+            <i class="ph ph-camera text-4xl text-gray-400 mb-2"></i>
+            <p class="font-bold text-gray-600 dark:text-gray-300">사진 찍기 또는 업로드</p>
+            <p class="text-xs text-gray-500 mt-1">영수증을 올리면 식재료를 자동 분류합니다.<br/>(원본 사진은 저장되지 않습니다)</p>
+          </div>
+        </div>
+
+        <form @submit.prevent="addItem" class="space-y-4">
+          <div>
+            <label class="block text-sm font-bold mb-1">식재료 이름</label>
+            <input v-model="newItem.name" required type="text" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-bold mb-1">보관 위치</label>
+              <select v-model="newItem.location" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+                <option value="냉장">냉장</option>
+                <option value="냉동">냉동</option>
+                <option value="실온">실온</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-bold mb-1">소비기한</label>
+              <input v-model="newItem.expiryDate" required type="date" class="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+            </div>
+          </div>
+          <button type="submit" class="w-full bg-primary text-white font-bold py-3 rounded-xl shadow-lg hover:bg-emerald-600 active:scale-95 transition-transform">
+            직접 추가하기
+          </button>
+        </form>
+      </div>
+
+      <!-- 탭 3: 알림 센터 -->
+      <div v-if="currentTab === 'notifications'" class="space-y-4">
+        <h2 class="text-xl font-bold border-b pb-2 dark:border-gray-700">임박 식재료 알림</h2>
+        <div v-if="imminentItems.length === 0" class="text-center text-gray-500 py-10">
+          <i class="ph ph-check-circle text-4xl mb-2 text-primary"></i><p>소비기한이 임박한 식재료가 없습니다.</p>
+        </div>
+        <div v-else v-for="item in imminentItems" :key="'noti-'+item.id" class="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-xl border border-red-200 dark:border-red-800 flex gap-3 items-start">
+          <i class="ph-fill ph-warning-circle text-2xl shrink-0 mt-0.5"></i>
+          <div>
+            <p class="font-bold">{{ item.name }} ({{ item.location }})</p>
+            <p class="text-sm">소비기한이 {{ getDday(item.expiryDate) }} 남았습니다! 빨리 소비해주세요.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 탭 4: 설정 -->
+      <div v-if="currentTab === 'settings'" class="space-y-6">
+        
+        <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
+          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 백업/복원 (iCloud)</div>
+          <div class="p-4 space-y-4 text-sm text-gray-600 dark:text-gray-400">
+            <p class="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 p-2 rounded">
+              <i class="ph ph-info"></i> 내보내기를 누르면 파일 앱(iCloud Drive)에 저장됩니다. 기기 변경 시 백업 파일을 불러오세요.
+            </p>
+            <div class="flex gap-2">
+              <button @click="exportData" class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2 rounded-lg text-gray-800 dark:text-gray-200 font-bold">백업 내보내기 (.json)</button>
+              <label class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2 rounded-lg text-center cursor-pointer text-gray-800 dark:text-gray-200 font-bold">
+                백업 가져오기
+                <input type="file" accept=".json" @change="importData" class="hidden">
+              </label>
+            </div>
+            <p class="text-xs text-center">마지막 백업: {{ settings.lastBackup || '없음' }}</p>
+          </div>
+        </section>
+
+        <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
+          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 관리</div>
+          <div class="p-4 flex flex-col gap-3">
+            <button @click="exportCSV" class="w-full flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+              <span>엑셀(CSV) 내보내기</span><i class="ph ph-file-csv text-lg"></i>
+            </button>
+            <button @click="addSampleData" class="w-full flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+              <span>샘플 데이터 추가</span><i class="ph ph-database text-lg"></i>
+            </button>
+            <button @click="clearAllData" class="w-full flex items-center justify-between p-2 rounded text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+              <span>전체 데이터 삭제</span><i class="ph ph-trash text-lg"></i>
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- 하단 네비게이션바 -->
+    <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe">
+      <button @click="currentTab = 'list'" :class="currentTab === 'list' ? 'text-primary' : 'text-gray-400'" class="flex flex-col items-center p-3 flex-1">
+        <i class="ph-fill ph-list-bullets text-2xl"></i><span class="text-[10px] mt-1">목록</span>
+      </button>
+      <button @click="currentTab = 'add'" class="relative flex-1">
+        <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg border-4 border-white dark:border-gray-800" :class="currentTab === 'add' ? 'scale-110' : ''">
+          <i class="ph ph-plus text-2xl"></i>
+        </div>
+      </button>
+      <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'text-primary' : 'text-gray-400'" class="flex flex-col items-center p-3 flex-1">
+        <i class="ph-fill ph-gear text-2xl"></i><span class="text-[10px] mt-1">설정</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, watch } = Vue;
+
+    // 식재료 자동 분류 사전 (한국어)
+    const ingredientDict = {
+      '우유': { loc: '냉장', days: 10 },
+      '계란': { loc: '냉장', days: 20 },
+      '돼지고기': { loc: '냉장', days: 3 },
+      '소고기': { loc: '냉장', days: 4 },
+      '닭고기': { loc: '냉동', days: 180 },
+      '두부': { loc: '냉장', days: 7 },
+      '양파': { loc: '실온', days: 14 },
+      '마늘': { loc: '냉장', days: 30 },
+      '햇반': { loc: '실온', days: 180 },
+      '라면': { loc: '실온', days: 150 },
+    };
+
+    createApp({
+      setup() {
+        const items = ref([]);
+        const currentTab = ref('list');
+        const isDark = ref(false);
+        const searchQuery = ref('');
+        const filterLocation = ref('all');
+        const isOcrLoading = ref(false);
+        const settings = ref({ lastBackup: '' });
+        
+        const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
+
+        // 데이터 초기 로드
+        onMounted(async () => {
+          const storedItems = await localforage.getItem('freshmate_items');
+          if (storedItems) items.value = storedItems;
+          
+          const storedSettings = await localforage.getItem('freshmate_settings');
+          if (storedSettings) settings.value = storedSettings;
+
+          const savedTheme = localStorage.getItem('theme');
+          if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            isDark.value = true;
+            document.documentElement.classList.add('dark');
+          }
+
+          // 기본 소비기한 오늘+7일로 설정
+          const d = new Date();
+          d.setDate(d.getDate() + 7);
+          newItem.value.expiryDate = d.toISOString().split('T')[0];
+        });
+
+        // 데이터 저장 감시자
+        watch(items, (newVal) => {
+          localforage.setItem('freshmate_items', newVal);
+        }, { deep: true });
+        
+        watch(settings, (newVal) => {
+          localforage.setItem('freshmate_settings', newVal);
+        }, { deep: true });
+
+        // 테마 토글
+        const toggleTheme = () => {
+          isDark.value = !isDark.value;
+          if (isDark.value) {
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+          }
+        };
+
+        // 목록 계산 로직
+        const filteredItems = computed(() => {
+          let res = items.value;
+          if (filterLocation.value !== 'all') {
+            res = res.filter(i => i.location === filterLocation.value);
+          }
+          if (searchQuery.value) {
+            res = res.filter(i => i.name.includes(searchQuery.value));
+          }
+          // 임박한 순으로 정렬
+          return res.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+        });
+
+        const imminentItems = computed(() => {
+          return items.value.filter(i => {
+            const days = calcDiffDays(i.expiryDate);
+            return days >= 0 && days <= 3; // 3일 이하 남은 것만 알림
+          });
+        });
+
+        const alertCount = computed(() => imminentItems.value.length);
+
+        // 시간 계산 도우미
+        const calcDiffDays = (targetDate) => {
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const tDate = new Date(targetDate);
+          return Math.ceil((tDate - today) / (1000 * 60 * 60 * 24));
+        };
+
+        const getDday = (dateStr) => {
+          const d = calcDiffDays(dateStr);
+          if (d < 0) return `D+${Math.abs(d)} (지남)`;
+          if (d === 0) return 'D-Day';
+          return `D-${d}`;
+        };
+
+        const getStatusColor = (dateStr) => {
+          const d = calcDiffDays(dateStr);
+          if (d < 0) return 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'; // 지남
+          if (d <= 3) return 'bg-red-50 text-red-900 border-red-200 dark:bg-red-900/30 dark:border-red-800'; // 임박
+          if (d <= 7) return 'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800'; // 주의
+          return 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white'; // 안전
+        };
+
+        // CRUD 로직
+        const addItem = () => {
+          if (!newItem.value.name) return;
+          items.value.push({
+            id: Date.now().toString(),
+            name: newItem.value.name,
+            location: newItem.value.location,
+            expiryDate: newItem.value.expiryDate,
+          });
+          newItem.value.name = '';
+          currentTab.value = 'list';
+        };
+
+        const deleteItem = (id) => {
+          if(confirm('정말 삭제하시겠습니까?')) {
+            items.value = items.value.filter(i => i.id !== id);
+          }
+        };
+
+        // OCR 로직
+        const handleImageUpload = async (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          isOcrLoading.value = true;
+          try {
+            // Tesseract 브라우저 구동
+            const worker = await Tesseract.createWorker('kor');
+            const { data: { text } } = await worker.recognize(file);
+            await worker.terminate();
+            
+            // 텍스트 분석하여 사전에 있는 단어 찾기
+            let found = false;
+            for (const [key, val] of Object.entries(ingredientDict)) {
+              if (text.includes(key)) {
+                newItem.value.name = key;
+                newItem.value.location = val.loc;
+                const d = new Date();
+                d.setDate(d.getDate() + val.days);
+                newItem.value.expiryDate = d.toISOString().split('T')[0];
+                found = true;
+                break;
+              }
+            }
+            if(!found) {
+              alert('인식된 식재료 정보가 부족합니다. 수동으로 입력해주세요.');
+            }
+          } catch (e) {
+            console.error(e);
+            alert('사진 인식에 실패했습니다.');
+          } finally {
+            isOcrLoading.value = false;
+            event.target.value = ''; // input 초기화
+          }
+        };
+
+        // 설정 로직
+        const exportData = () => {
+          const dataStr = JSON.stringify(items.value);
+          const blob = new Blob([dataStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `freshmate_backup_${new Date().toISOString().slice(0,10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          
+          settings.value.lastBackup = new Date().toLocaleString();
+          alert('백업 파일이 다운로드 되었습니다.
+iOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
+        };
+
+        const importData = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = JSON.parse(e.target.result);
+              if (Array.isArray(data)) {
+                items.value = data;
+                alert('복원이 완료되었습니다.');
+              }
+            } catch (err) {
+              alert('잘못된 백업 파일입니다.');
+            }
+          };
+          reader.readAsText(file);
+        };
+
+        const exportCSV = () => {
+          let csvContent = "data:text/csv;charset=utf-8,﻿"; // 한글 깨짐 방지
+          csvContent += "이름,보관위치,소비기한
+";
+          items.value.forEach(row => {
+            csvContent += `${row.name},${row.location},${row.expiryDate}
+`;
+          });
+          const encodedUri = encodeURI(csvContent);
+          const a = document.createElement("a");
+          a.setAttribute("href", encodedUri);
+          a.setAttribute("download", "freshmate_list.csv");
+          a.click();
+        };
+
+        const addSampleData = () => {
+          const today = new Date();
+          const fmt = (d) => d.toISOString().split('T')[0];
+          
+          const d1 = new Date(today); d1.setDate(d1.getDate() + 2);
+          const d2 = new Date(today); d2.setDate(d2.getDate() + 15);
+          const d3 = new Date(today); d3.setDate(d3.getDate() - 1);
+
+          items.value.push(
+            { id: Date.now()+'1', name: '우유', location: '냉장', expiryDate: fmt(d1) },
+            { id: Date.now()+'2', name: '돼지고기', location: '냉동', expiryDate: fmt(d2) },
+            { id: Date.now()+'3', name: '두부', location: '냉장', expiryDate: fmt(d3) }
+          );
+          currentTab.value = 'list';
+        };
+
+        const clearAllData = () => {
+          if(confirm('정말 모든 데이터를 삭제하시겠습니까? 복구할 수 없습니다.')) {
+            items.value = [];
+            alert('초기화 되었습니다.');
+          }
+        };
+
+        return {
+          items, currentTab, isDark, toggleTheme,
+          searchQuery, filterLocation, filteredItems, imminentItems, alertCount,
+          newItem, addItem, deleteItem, handleImageUpload, isOcrLoading,
+          getDday, getStatusColor,
+          settings, exportData, importData, exportCSV, addSampleData, clearAllData
+        };
+      }
+    }).mount('#app');
+
+    // Service Worker 등록
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+  </script>
+  <style>
+    /* 아이폰 하단 홈바(Safe Area) 패딩 지원 */
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  </style>
+</body>
+</html>
