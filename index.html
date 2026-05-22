@@ -31,6 +31,8 @@
     body { -webkit-tap-highlight-color: transparent; }
     ::-webkit-scrollbar { width: 0px; background: transparent; }
     .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
@@ -49,7 +51,7 @@
 
     <main class="flex-1 overflow-y-auto p-4 pb-24">
       
-      <div v-if="currentTab === 'list'" class="space-y-4">
+      <div v-if="currentTab === 'list'" class="space-y-6 animate-fade-in">
         <div class="flex gap-2">
           <div class="relative flex-1">
             <i class="ph ph-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
@@ -67,24 +69,35 @@
           <i class="ph ph-empty text-5xl mb-3 text-gray-300 dark:text-gray-600"></i>
           <p>등록된 식재료가 없습니다.</p>
         </div>
-        <div v-else class="space-y-3">
-          <div v-for="item in filteredItems" :key="item.id" class="p-4 rounded-xl border dark:border-gray-700 flex justify-between items-center shadow-sm" :class="getStatusColor(item.expiryDate)">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="font-bold text-lg">{{ item.name }}</span>
-                <span class="text-xs px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10">{{ item.location }}</span>
-              </div>
-              <div class="text-sm opacity-90 flex items-center gap-1">
-                <i class="ph ph-calendar-blank"></i> {{ item.expiryDate }} 
-                <span class="font-bold ml-1">({{ getDday(item.expiryDate) }})</span>
+        
+        <div v-else>
+          <div v-for="cat in ['냉장', '냉동', '실온']" :key="cat" v-show="groupedItems[cat] && groupedItems[cat].length > 0" class="mb-6">
+            <h3 class="text-lg font-bold mb-3 flex items-center gap-2 text-gray-700 dark:text-gray-300">
+              <i class="ph-fill" :class="{'ph-thermometer-cold text-blue-500': cat==='냉장', 'ph-snowflake text-cyan-500': cat==='냉동', 'ph-package text-orange-400': cat==='실온'}"></i>
+              {{ cat }} <span class="text-xs font-normal opacity-50">{{ groupedItems[cat].length }}개</span>
+            </h3>
+            <div class="space-y-3">
+              <div v-for="item in groupedItems[cat]" :key="item.id" class="p-4 rounded-xl border dark:border-gray-700 flex justify-between items-center shadow-sm" :class="getStatusColor(item.expiryDate)">
+                <div>
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-bold text-lg">{{ item.name }}</span>
+                  </div>
+                  <div class="text-sm opacity-90 flex items-center gap-1">
+                    <i class="ph ph-calendar-blank"></i> {{ item.expiryDate }} 
+                    <span class="font-bold ml-1">({{ getDday(item.expiryDate) }})</span>
+                  </div>
+                </div>
+                <div class="flex gap-1">
+                  <button @click="openEdit(item)" class="text-gray-500 hover:text-primary bg-white/50 dark:bg-black/20 p-2 rounded-lg active:scale-95 transition-transform"><i class="ph ph-pencil-simple text-xl"></i></button>
+                  <button @click="deleteItem(item.id)" class="text-red-500 hover:text-red-700 bg-white/50 dark:bg-black/20 p-2 rounded-lg active:scale-95 transition-transform"><i class="ph ph-trash text-xl"></i></button>
+                </div>
               </div>
             </div>
-            <button @click="deleteItem(item.id)" class="text-red-500 hover:text-red-700 bg-white/50 dark:bg-black/20 p-2 rounded-lg active:scale-95 transition-transform"><i class="ph ph-trash text-xl"></i></button>
           </div>
         </div>
       </div>
 
-      <div v-if="currentTab === 'add'" class="space-y-6">
+      <div v-if="currentTab === 'add'" class="space-y-6 animate-fade-in">
         
         <div class="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-xl text-center border-2 border-dashed border-primary/50 relative overflow-hidden transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
           <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" :disabled="isOcrLoading">
@@ -105,7 +118,7 @@
             <i class="ph-fill ph-magic-wand"></i> 사진에서 찾은 항목 (클릭하여 입력)
           </p>
           <div class="flex flex-wrap gap-2">
-            <button v-for="name in recognizedNames" :key="name" @click="selectRecognizedName(name)" 
+            <button v-for="name in recognizedNames" :key="name" @click="quickAdd(name, true)" 
               class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 text-sm rounded-full shadow-sm hover:border-primary text-gray-800 dark:text-gray-200 active:scale-95 transition-all text-left">
               {{ name }}
             </button>
@@ -138,9 +151,21 @@
             <i class="ph-bold ph-plus"></i> 목록에 추가하기
           </button>
         </form>
+
+        <div v-if="Object.keys(customDict).length > 0" class="pt-4 border-t dark:border-gray-700 animate-fade-in">
+          <p class="text-sm font-bold text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-1">
+            <i class="ph-fill ph-clock-counter-clockwise"></i> 자주 쓴 식재료 바로 불러오기
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="(data, name) in customDict" :key="'dict-'+name" @click="quickAdd(name, false)" 
+              class="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm rounded-lg shadow-sm hover:border-primary text-gray-700 dark:text-gray-300 active:scale-95 transition-all">
+              {{ name }}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div v-if="currentTab === 'notifications'" class="space-y-4">
+      <div v-if="currentTab === 'notifications'" class="space-y-4 animate-fade-in">
         <h2 class="text-xl font-bold border-b pb-2 dark:border-gray-700">임박 식재료 알림</h2>
         <div v-if="imminentItems.length === 0" class="text-center text-gray-500 py-10">
           <i class="ph ph-check-circle text-5xl mb-2 text-primary"></i><p>소비기한이 임박한 식재료가 없습니다.</p>
@@ -154,16 +179,27 @@
         </div>
       </div>
 
-      <div v-if="currentTab === 'settings'" class="space-y-6">
+      <div v-if="currentTab === 'settings'" class="space-y-6 animate-fade-in">
+        
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
-          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 백업/복원 (iCloud)</div>
-          <div class="p-4 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-            <p class="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 p-3 rounded-lg leading-relaxed">
-              <i class="ph-fill ph-info"></i> 내보내기를 누르면 파일 앱(iCloud Drive)에 저장됩니다. 기기 변경 시 백업 파일을 불러오세요.
-            </p>
-            <div class="flex gap-2">
-              <button @click="exportData" class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2.5 rounded-lg text-gray-800 dark:text-gray-200 font-bold active:scale-95 transition-transform">내보내기 (.json)</button>
-              <label class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border dark:border-gray-600 py-2.5 rounded-lg text-center cursor-pointer text-gray-800 dark:text-gray-200 font-bold active:scale-95 transition-transform">
+          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">간편 텍스트 공유 (카카오톡 등)</div>
+          <div class="p-4 space-y-3">
+            <p class="text-xs text-gray-500 mb-1">현재 내 식재료 목록을 긴 암호문 형태로 복사하여 카카오톡으로 보낼 수 있습니다.</p>
+            <button @click="copyShareCode" class="w-full flex justify-center items-center gap-2 bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300 border border-blue-200 dark:border-blue-800 p-3 rounded-lg font-bold hover:bg-blue-100 active:scale-95 transition-all">
+              <i class="ph-bold ph-share-network text-lg"></i> 내 공유 코드 복사하기
+            </button>
+            <button @click="pasteShareCode" class="w-full flex justify-center items-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 p-3 rounded-lg font-bold hover:bg-gray-200 active:scale-95 transition-all">
+              <i class="ph-bold ph-download-simple text-lg"></i> 전달받은 코드 입력하기
+            </button>
+          </div>
+        </section>
+
+        <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
+          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">파일 백업/복원 (iCloud)</div>
+          <div class="p-4 space-y-4">
+            <div class="flex gap-2 text-sm">
+              <button @click="exportData" class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 border dark:border-gray-600 py-2.5 rounded-lg font-bold active:scale-95 transition-transform">내보내기 (.json)</button>
+              <label class="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 border dark:border-gray-600 py-2.5 rounded-lg text-center cursor-pointer font-bold active:scale-95 transition-transform">
                 가져오기
                 <input type="file" accept=".json" @change="importData" class="hidden">
               </label>
@@ -173,12 +209,9 @@
         </section>
 
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
-          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 관리</div>
-          <div class="p-2 flex flex-col">
-            <button @click="exportCSV" class="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium">
-              <span>엑셀(CSV) 다운로드</span><i class="ph ph-file-csv text-xl text-green-600"></i>
-            </button>
-            <button @click="clearAllData" class="w-full flex items-center justify-between p-3 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium mt-1">
+          <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800 text-red-500">위험 구역</div>
+          <div class="p-2">
+            <button @click="clearAllData" class="w-full flex items-center justify-between p-3 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium">
               <span>전체 데이터 초기화</span><i class="ph ph-trash text-xl"></i>
             </button>
           </div>
@@ -186,7 +219,37 @@
       </div>
     </main>
 
-    <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]">
+    <div v-if="editModalOpen" class="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl shadow-2xl p-6">
+        <h3 class="text-lg font-bold mb-4">식재료 정보 수정</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-bold mb-1">식재료 이름</label>
+            <input v-model="editingData.name" type="text" class="w-full p-2.5 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-bold mb-1">보관 위치</label>
+              <select v-model="editingData.location" class="w-full p-2.5 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+                <option value="냉장">냉장</option>
+                <option value="냉동">냉동</option>
+                <option value="실온">실온</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-bold mb-1">소비기한</label>
+              <input v-model="editingData.expiryDate" type="date" class="w-full p-2.5 rounded-lg border dark:border-gray-700 dark:bg-gray-900 focus:outline-primary">
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button @click="editModalOpen = false" class="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-gray-700 font-bold text-gray-700 dark:text-gray-200">취소</button>
+          <button @click="saveEdit" class="flex-1 py-3 rounded-xl bg-primary text-white font-bold">저장하기</button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)] z-40">
       <button @click="currentTab = 'list'" :class="currentTab === 'list' ? 'text-primary' : 'text-gray-400 hover:text-gray-600'" class="flex flex-col items-center p-3 flex-1 transition-colors">
         <i class="ph-fill ph-list-bullets text-2xl"></i><span class="text-[10px] mt-1 font-medium">목록</span>
       </button>
@@ -202,7 +265,7 @@
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, watch } = Vue;
+    const { createApp, ref, computed, onMounted } = Vue;
 
     createApp({
       setup() {
@@ -216,9 +279,12 @@
         const settings = ref({ lastBackup: '' });
         
         const recognizedNames = ref([]);
-        const customDict = ref({});
-        
+        const customDict = ref({}); // DB화된 자주 쓰는 식재료
         const newItem = ref({ name: '', location: '냉장', expiryDate: '' });
+
+        // 수정 모달 상태
+        const editModalOpen = ref(false);
+        const editingData = ref({ id: '', name: '', location: '냉장', expiryDate: '' });
 
         onMounted(async () => {
           try {
@@ -242,21 +308,9 @@
           resetNewItemDate();
         });
 
-        // 🌟 명시적인 로컬 저장 프로세스 (Vue Proxy 제거 후 순수 데이터만 IndexedDB에 기록)
-        const saveItemsToStorage = async () => {
-          const rawData = JSON.parse(JSON.stringify(items.value));
-          await localforage.setItem('freshmate_items', rawData);
-        };
-
-        const saveDictToStorage = async () => {
-          const rawData = JSON.parse(JSON.stringify(customDict.value));
-          await localforage.setItem('freshmate_dict', rawData);
-        };
-
-        const saveSettingsToStorage = async () => {
-          const rawData = JSON.parse(JSON.stringify(settings.value));
-          await localforage.setItem('freshmate_settings', rawData);
-        };
+        const saveItemsToStorage = async () => await localforage.setItem('freshmate_items', JSON.parse(JSON.stringify(items.value)));
+        const saveDictToStorage = async () => await localforage.setItem('freshmate_dict', JSON.parse(JSON.stringify(customDict.value)));
+        const saveSettingsToStorage = async () => await localforage.setItem('freshmate_settings', JSON.parse(JSON.stringify(settings.value)));
 
         const resetNewItemDate = () => {
           const d = new Date();
@@ -280,6 +334,16 @@
           if (filterLocation.value !== 'all') res = res.filter(i => i.location === filterLocation.value);
           if (searchQuery.value) res = res.filter(i => i.name.includes(searchQuery.value));
           return res.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+        });
+
+        // 위치별(카테고리별) 그룹화
+        const groupedItems = computed(() => {
+          const groups = { '냉장': [], '냉동': [], '실온': [] };
+          filteredItems.value.forEach(item => {
+            if (groups[item.location]) groups[item.location].push(item);
+            else groups['냉장'].push(item); // 방어 코드
+          });
+          return groups;
         });
 
         const imminentItems = computed(() => items.value.filter(i => {
@@ -320,29 +384,60 @@
             expiryDate: newItem.value.expiryDate,
           });
 
+          // 내 사전 DB 업데이트
           const daysDiff = calcDiffDays(newItem.value.expiryDate);
           customDict.value[newItem.value.name] = {
             loc: newItem.value.location,
             days: daysDiff > 0 ? daysDiff : 7
           };
 
-          // 변동 즉시 로컬 저장소 강제 저장
           await saveItemsToStorage();
           await saveDictToStorage();
 
           newItem.value.name = '';
           resetNewItemDate();
-          
-          // 🌟 추가 후 자동으로 '목록' 탭으로 화면 전환하여 저장 결과 확인
           currentTab.value = 'list';
-          alert('목록에 성공적으로 추가되었습니다!');
         };
 
         const deleteItem = async (id) => {
           if(confirm('이 식재료를 삭제하시겠습니까?')) {
             items.value = items.value.filter(i => i.id !== id);
-            await saveItemsToStorage(); // 삭제 즉시 동기화
+            await saveItemsToStorage();
           }
+        };
+
+        // 수정 기능
+        const openEdit = (item) => {
+          editingData.value = { ...item };
+          editModalOpen.value = true;
+        };
+
+        const saveEdit = async () => {
+          if (!editingData.value.name) return alert('이름을 입력해주세요.');
+          const index = items.value.findIndex(i => i.id === editingData.value.id);
+          if (index > -1) {
+            items.value[index] = { ...editingData.value };
+            await saveItemsToStorage();
+          }
+          editModalOpen.value = false;
+        };
+
+        // 빠른 추가 기능
+        const quickAdd = (name, isOcrResult = false) => {
+          newItem.value.name = name;
+          if (customDict.value[name]) {
+            newItem.value.location = customDict.value[name].loc;
+            const d = new Date();
+            d.setDate(d.getDate() + customDict.value[name].days);
+            newItem.value.expiryDate = d.toISOString().split('T')[0];
+          } else {
+            newItem.value.location = '냉장';
+            resetNewItemDate();
+          }
+          if(isOcrResult) {
+            recognizedNames.value = recognizedNames.value.filter(n => n !== name);
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' }); // 상단 폼으로 이동
         };
 
         const handleImageUpload = async (event) => {
@@ -434,24 +529,41 @@
           }
         };
 
-        const selectRecognizedName = (name) => {
-          newItem.value.name = name;
-          if (customDict.value[name]) {
-            newItem.value.location = customDict.value[name].loc;
-            const d = new Date();
-            d.setDate(d.getDate() + customDict.value[name].days);
-            newItem.value.expiryDate = d.toISOString().split('T')[0];
-          } else {
-            newItem.value.location = '냉장';
-            resetNewItemDate();
+        // 텍스트 기반 쉐어링 (공유)
+        const copyShareCode = async () => {
+          if(items.value.length === 0) return alert('공유할 식재료가 없습니다.');
+          // 데이터를 문자열로 변환 후 Base64로 인코딩하여 암호문처럼 짧게 만듦
+          const code = btoa(encodeURIComponent(JSON.stringify(items.value)));
+          try {
+            await navigator.clipboard.writeText(code);
+            alert('공유 코드가 복사되었습니다!\n가족이나 친구에게 카카오톡으로 붙여넣기 해주세요.');
+          } catch (e) {
+            alert('복사에 실패했습니다. 기기 설정을 확인해주세요.');
           }
-          recognizedNames.value = recognizedNames.value.filter(n => n !== name);
+        };
+
+        const pasteShareCode = async () => {
+          const code = prompt('카카오톡 등으로 전달받은 공유 코드를 붙여넣어 주세요.\n(주의: 기존 목록에 데이터가 추가됩니다)');
+          if (!code) return;
+          try {
+            const decoded = decodeURIComponent(atob(code));
+            const parsed = JSON.parse(decoded);
+            if (Array.isArray(parsed)) {
+              // 고유 ID 충돌 방지를 위해 ID 재발급하여 병합
+              const mergedItems = parsed.map(item => ({ ...item, id: Date.now().toString() + Math.random().toString(36).substring(2, 5) }));
+              items.value = [...items.value, ...mergedItems];
+              await saveItemsToStorage();
+              alert(`성공적으로 ${parsed.length}개의 식재료를 가져왔습니다!`);
+              currentTab.value = 'list';
+            }
+          } catch(e) {
+            alert('유효하지 않은 코드입니다. 코드를 다시 확인해주세요.');
+          }
         };
 
         const exportData = async () => {
           const payload = { items: items.value, dict: customDict.value };
-          const dataStr = JSON.stringify(payload);
-          const blob = new Blob([dataStr], { type: 'application/json' });
+          const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -460,9 +572,7 @@
           URL.revokeObjectURL(url);
           
           settings.value.lastBackup = new Date().toLocaleString();
-          await saveSettingsToStorage(); // 백업 시각 영구 기록
-
-          alert('다운로드 되었습니다.\niOS [파일] 앱(iCloud)에 저장해두세요.');
+          await saveSettingsToStorage();
         };
 
         const importData = async (event) => {
@@ -488,31 +598,20 @@
           reader.readAsText(file);
         };
 
-        const exportCSV = () => {
-          let csvContent = "data:text/csv;charset=utf-8,\uFEFF이름,보관위치,소비기한\n";
-          items.value.forEach(row => {
-            csvContent += `${row.name},${row.location},${row.expiryDate}\n`;
-          });
-          const a = document.createElement("a");
-          a.setAttribute("href", encodeURI(csvContent));
-          a.setAttribute("download", "freshmate_list.csv");
-          a.click();
-        };
-
         const clearAllData = async () => {
-          if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(AI가 학습한 식재료 사전 데이터는 유지됩니다)')) {
+          if(confirm('모든 식재료 목록을 삭제하시겠습니까?\n(AI가 학습한 자주 쓰는 식재료 사전 데이터는 유지됩니다)')) {
             items.value = [];
-            await saveItemsToStorage(); // 초기화 동기화
+            await saveItemsToStorage();
           }
         };
 
         return {
           items, currentTab, isDark, toggleTheme,
-          searchQuery, filterLocation, filteredItems, imminentItems, alertCount,
-          newItem, addItem, deleteItem, 
-          handleImageUpload, isOcrLoading, ocrProgressText, recognizedNames, selectRecognizedName,
+          searchQuery, filterLocation, filteredItems, groupedItems, imminentItems, alertCount,
+          newItem, addItem, deleteItem, openEdit, editModalOpen, editingData, saveEdit, quickAdd, customDict,
+          handleImageUpload, isOcrLoading, ocrProgressText, recognizedNames,
           getDday, getStatusColor,
-          settings, exportData, importData, exportCSV, clearAllData
+          settings, exportData, importData, copyShareCode, pasteShareCode, clearAllData
         };
       }
     }).mount('#app');
@@ -521,9 +620,5 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
   </script>
-  <style>
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-  </style>
 </body>
 </html>
