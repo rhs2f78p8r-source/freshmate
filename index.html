@@ -33,7 +33,6 @@
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
   <div id="app" class="max-w-md mx-auto h-screen flex flex-col bg-white dark:bg-gray-800 shadow-xl overflow-hidden relative">
     
-    <!-- 헤더 -->
     <header class="flex justify-between items-center p-4 bg-primary text-white shrink-0">
       <h1 class="text-xl font-bold tracking-wide"><i class="ph-fill ph-leaf"></i> FreshMate</h1>
       <div class="flex gap-4">
@@ -45,10 +44,8 @@
       </div>
     </header>
 
-    <!-- 메인 컨텐츠 영역 -->
     <main class="flex-1 overflow-y-auto p-4 pb-24">
       
-      <!-- 탭 1: 식재료 목록 -->
       <div v-if="currentTab === 'list'" class="space-y-4">
         <div class="flex gap-2">
           <div class="relative flex-1">
@@ -80,10 +77,8 @@
         </div>
       </div>
 
-      <!-- 탭 2: 식재료 추가 (OCR) -->
       <div v-if="currentTab === 'add'" class="space-y-6">
         <div class="bg-gray-100 dark:bg-gray-900 p-6 rounded-xl text-center border-2 border-dashed border-gray-300 dark:border-gray-700 relative">
-          <!-- 수정: capture="environment" 제거하여 아이폰에서 갤러리 선택 옵션이 뜨도록 수정함 -->
           <input type="file" accept="image/*" @change="handleImageUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
           <div v-if="isOcrLoading" class="flex flex-col items-center">
             <i class="ph ph-spinner-gap animate-spin text-4xl text-primary mb-2"></i>
@@ -121,7 +116,6 @@
         </form>
       </div>
 
-      <!-- 탭 3: 알림 센터 -->
       <div v-if="currentTab === 'notifications'" class="space-y-4">
         <h2 class="text-xl font-bold border-b pb-2 dark:border-gray-700">임박 식재료 알림</h2>
         <div v-if="imminentItems.length === 0" class="text-center text-gray-500 py-10">
@@ -136,7 +130,6 @@
         </div>
       </div>
 
-      <!-- 탭 4: 설정 -->
       <div v-if="currentTab === 'settings'" class="space-y-6">
         <section class="bg-white dark:bg-gray-900 rounded-xl border dark:border-gray-700 overflow-hidden shadow-sm">
           <div class="px-4 py-3 border-b dark:border-gray-700 font-bold bg-gray-50 dark:bg-gray-800">데이터 백업/복원 (iCloud)</div>
@@ -172,7 +165,6 @@
       </div>
     </main>
 
-    <!-- 하단 네비게이션바 -->
     <nav class="absolute bottom-0 w-full bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around pb-safe">
       <button @click="currentTab = 'list'" :class="currentTab === 'list' ? 'text-primary' : 'text-gray-400'" class="flex flex-col items-center p-3 flex-1">
         <i class="ph-fill ph-list-bullets text-2xl"></i><span class="text-[10px] mt-1">목록</span>
@@ -192,6 +184,7 @@
   <script>
     const { createApp, ref, computed, onMounted, watch } = Vue;
 
+    // 업데이트된 식재료 자동 분류 사전
     const ingredientDict = {
       '우유': { loc: '냉장', days: 10 },
       '계란': { loc: '냉장', days: 20 },
@@ -203,6 +196,15 @@
       '마늘': { loc: '냉장', days: 30 },
       '햇반': { loc: '실온', days: 180 },
       '라면': { loc: '실온', days: 150 },
+      '땡초 근위 볶음': { loc: '냉동', days: 90 }, //
+      '고래사 어묵가득 한입 떡볶이': { loc: '냉장', days: 7 }, //
+      '치킨데리야끼 볶음밥': { loc: '냉동', days: 90 }, //
+      '강릉 초당 순두부': { loc: '냉장', days: 7 }, //
+      '미니 후레쉬 생모짜렐라 치즈': { loc: '냉장', days: 14 }, //
+      '무항한돈 콰트로치즈 비엔나': { loc: '냉장', days: 20 }, //
+      '통영 깐멍게': { loc: '냉장', days: 3 }, //
+      '숄더슬햄': { loc: '냉장', days: 30 }, //
+      '영천 깐마늘': { loc: '냉장', days: 30 }, //
     };
 
     createApp({
@@ -324,20 +326,33 @@
             const { data: { text } } = await worker.recognize(file);
             await worker.terminate();
             
-            let found = false;
+            // OCR 텍스트 전처리: 불필요한 줄바꿈 및 특수문자 제거, 대괄호와 소괄호 제거
+            const cleanText = text.replace(/[\n\r]/g, ' ').replace(/[\[\]\(\)]/g, ''); 
+
+            let foundIngreds = []; // 인식된 식재료들을 담을 배열
             for (const [key, val] of Object.entries(ingredientDict)) {
-              if (text.includes(key)) {
-                newItem.value.name = key;
-                newItem.value.location = val.loc;
+              if (cleanText.includes(key)) {
                 const d = new Date();
                 d.setDate(d.getDate() + val.days);
-                newItem.value.expiryDate = d.toISOString().split('T')[0];
-                found = true;
-                break;
+                foundIngreds.push({
+                  name: key,
+                  location: val.loc,
+                  expiryDate: d.toISOString().split('T')[0],
+                });
               }
             }
-            if(!found) {
+
+            if(foundIngreds.length > 0) {
+              // 여러 개가 인식되었을 경우 첫 번째 것을 newItem에 세팅하거나, 
+              // 사용자가 선택할 수 있는 UI를 추가하는 것을 고려해볼 수 있습니다.
+              const firstFound = foundIngreds[0];
+              newItem.value.name = firstFound.name;
+              newItem.value.location = firstFound.location;
+              newItem.value.expiryDate = firstFound.expiryDate;
+              currentTab.value = 'add'; // 추가 탭으로 이동
+            } else {
               alert('인식된 식재료 정보가 부족합니다. 수동으로 입력해주세요.');
+              currentTab.value = 'add'; // 추가 탭으로 이동
             }
           } catch (e) {
             console.error(e);
@@ -359,7 +374,6 @@
           URL.revokeObjectURL(url);
           
           settings.value.lastBackup = new Date().toLocaleString();
-          // 수정: 문자열 줄바꿈 오류 수정
           alert('백업 파일이 다운로드 되었습니다.\niOS의 경우 [파일] 앱(iCloud)에 저장해주세요.');
         };
 
@@ -383,7 +397,6 @@
 
         const exportCSV = () => {
           let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-          // 수정: 문자열 줄바꿈 오류 수정
           csvContent += "이름,보관위치,소비기한\n";
           items.value.forEach(row => {
             csvContent += `${row.name},${row.location},${row.expiryDate}\n`;
